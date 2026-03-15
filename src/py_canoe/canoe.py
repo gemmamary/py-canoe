@@ -1,12 +1,14 @@
 from typing import TYPE_CHECKING, Iterable
 if TYPE_CHECKING:
     from py_canoe.core.child_elements.measurement_setup import Logging, ExporterSymbol, Message
+    from py_canoe.core.child_elements.test_configurations import TestConfiguration
 
 import re
 import sys
 import shutil
 import win32com
 import pythoncom
+from datetime import datetime, timezone
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Union
@@ -136,25 +138,33 @@ class CANoe:
         self.application.user_capl_functions = self.user_capl_functions
         return self.application.attach_to_active_application()
 
-    def get_bus_databases_info(self, bus: str = 'CAN') -> dict:
+    def get_bus_databases_info(self, bus: str = 'CAN', log_info: bool = False) -> dict:
         """
         Gets the bus databases information.
+
+        Args:
+            bus (str): The bus name. Defaults to 'CAN'.
+            log_info (bool): Whether to log the databases information. Defaults to False.
 
         Returns:
             dict: The bus databases information.
         """
-        return self.application.bus.get_bus_databases_info(bus)
+        return self.application.bus.get_bus_databases_info(bus, log_info)
 
-    def get_bus_nodes_info(self, bus: str = 'CAN') -> dict:
+    def get_bus_nodes_info(self, bus: str = 'CAN', log_info: bool = False) -> dict:
         """
         Gets the bus nodes information.
+
+        Args:
+            bus (str): The bus name. Defaults to 'CAN'.
+            log_info (bool): Whether to log the nodes information. Defaults to False.
 
         Returns:
             dict: The bus nodes information.
         """
-        return self.application.bus.get_bus_nodes_info(bus)
+        return self.application.bus.get_bus_nodes_info(bus, log_info)
 
-    def get_signal_value(self, bus: str, channel: int, message: str, signal: str, raw_value: bool = False) -> Union[int, float, None]:
+    def get_signal_value(self, bus: str, channel: int, message: str, signal: str, raw_value: bool = False, return_timestamp: bool = False) -> Union[int, float, None, tuple]:
         """
         Gets the value of a signal.
 
@@ -164,11 +174,15 @@ class CANoe:
             message (str): The message name.
             signal (str): The signal name.
             raw_value (bool): Whether to get the raw value. Defaults to False.
+            return_timestamp (bool): Whether to return the timestamp in timezone utc along with the signal value. Defaults to False.
 
         Returns:
-            Union[int, float, None]: The signal value or None if not found.
+            Union[int, float, None, tuple]: The signal value or None if not found. If return_timestamp is True, returns a tuple of (signal_value, timestamp).
         """
-        return self.application.bus.get_signal_value(bus, channel, message, signal, raw_value)
+        signal_value = self.application.bus.get_signal_value(bus, channel, message, signal, raw_value)
+        if return_timestamp:
+            return signal_value, datetime.now(timezone.utc).timestamp()
+        return signal_value
 
     def set_signal_value(self, bus: str, channel: int, message: str, signal: str, value: Union[int, float], raw_value: bool = False) -> bool:
         """
@@ -232,7 +246,7 @@ class CANoe:
         """
         return self.application.bus.check_signal_state(bus, channel, message, signal)
 
-    def get_j1939_signal_value(self, bus: str, channel: int, message: str, signal: str, source_addr: int, dest_addr: int, raw_value=False) -> Union[float, int, None]:
+    def get_j1939_signal_value(self, bus: str, channel: int, message: str, signal: str, source_addr: int, dest_addr: int, raw_value=False, return_timestamp=False) -> Union[float, int, None, tuple]:
         """
         Gets the value of a J1939 signal.
 
@@ -244,11 +258,15 @@ class CANoe:
             source_addr (int): The source address.
             dest_addr (int): The destination address.
             raw_value (bool): Whether to get the raw value. Defaults to False.
+            return_timestamp (bool): Whether to return the timestamp in timezone utc along with the signal value. Defaults to False.
 
         Returns:
-            Union[float, int, None]: The signal value or None if not found.
+            Union[float, int, None, tuple]: The signal value or None if not found. If return_timestamp is True, returns a tuple of (signal_value, timestamp).
         """
-        return self.application.bus.get_j1939_signal_value(bus, channel, message, signal, source_addr, dest_addr, raw_value)
+        signal_value = self.application.bus.get_j1939_signal_value(bus, channel, message, signal, source_addr, dest_addr, raw_value)
+        if return_timestamp:
+            return signal_value, datetime.now(timezone.utc).timestamp()
+        return signal_value
 
     def set_j1939_signal_value(self, bus: str, channel: int, message: str, signal: str, source_addr: int, dest_addr: int, value: Union[float, int], raw_value: bool = False) -> bool:
         """
@@ -433,6 +451,52 @@ class CANoe:
         """
         return self.application.configuration.enable_disable_replay_block(block_name, enable_disable)
 
+    def get_test_configurations(self) -> dict[str, 'TestConfiguration']:
+        """returns dictionary of test configuration names and its class object."""
+        return self.application.configuration.get_test_configurations()
+
+    def execute_all_test_configurations(self, wait_for_completion: bool = True) -> bool:
+        """executes all test configurations available in test setup.
+
+        Args:
+            wait_for_completion (bool): whether to wait for test configuration execution to complete before returning. defaults to True.
+
+        Returns:
+            bool: True if the operation was successful, False otherwise.
+        """
+        return self.application.configuration.execute_all_test_configurations(wait_for_completion)
+
+    def stop_all_test_configurations(self) -> bool:
+        """stops execution of all test configurations available in test setup.
+
+        Returns:
+            bool: True if the operation was successful, False otherwise.
+        """
+        return self.application.configuration.stop_all_test_configurations()
+
+    def execute_test_configuration(self, test_configuration_name: str, wait_for_completion: bool = True) -> bool:
+        """executes a specific test configuration.
+
+        Args:
+            test_configuration_name (str): The name of the test configuration to execute.
+            wait_for_completion (bool): Whether to wait for the test configuration execution to complete before returning. Defaults to True.
+
+        Returns:
+            bool: True if the operation was successful, False otherwise.
+        """
+        return self.application.configuration.execute_test_configuration(test_configuration_name, wait_for_completion)
+
+    def stop_test_configuration(self, test_configuration_name: str) -> bool:
+        """stops execution of a specific test configuration.
+
+        Args:
+            test_configuration_name (str): The name of the test configuration to stop.
+
+        Returns:
+            bool: True if the operation was successful, False otherwise.
+        """
+        return self.application.configuration.stop_test_configuration(test_configuration_name)
+
     def get_test_environments(self) -> dict:
         """returns dictionary of test environment names and class."""
         return self.application.configuration.get_test_environments()
@@ -583,17 +647,21 @@ class CANoe:
         """
         return self.application.configuration.set_configuration_modified(modified)
 
-    def get_environment_variable_value(self, env_var_name: str) -> Union[int, float, str, tuple, None]:
+    def get_environment_variable_value(self, env_var_name: str, return_timestamp: bool = False) -> Union[int, float, str, tuple, None]:
         """
         returns a environment variable value.
 
         Args:
             env_var_name (str): The name of the environment variable. Ex- "float_var"
+            return_timestamp (bool): Whether to return the timestamp in timezone utc along with the variable value. Defaults to False.
 
         Returns:
-            Environment Variable value.
+            Union[int, float, str, tuple, None]: The environment variable value or None if not found. If return_timestamp is True, returns a tuple of (variable_value, timestamp).
         """
-        return self.application.environment.get_environment_variable_value(env_var_name)
+        variable_value = self.application.environment.get_environment_variable_value(env_var_name)
+        if return_timestamp:
+            return variable_value, datetime.now(timezone.utc).timestamp()
+        return variable_value
 
     def set_environment_variable_value(self, env_var_name: str, value: Union[int, float, str, tuple]) -> bool:
         """
@@ -776,18 +844,22 @@ class CANoe:
         """
         return self.application.system.add_variable(sys_var_name, value, read_only)
 
-    def get_system_variable_value(self, sys_var_name: str, return_symbolic_name: bool = False) -> Union[int, float, str, None]:
+    def get_system_variable_value(self, sys_var_name: str, return_symbolic_name: bool = False, return_timestamp: bool = False) -> Union[int, float, str, None, tuple]:
         """
         Gets the value of a system variable.
 
         Args:
             sys_var_name (str): The name of the system variable.
             return_symbolic_name (bool): Whether to return the symbolic name.
+            return_timestamp (bool): Whether to return the timestamp in timezone utc along with the signal value. Defaults to False.
 
         Returns:
-            Union[int, float, str, None]: The value of the system variable or None if not found.
+            Union[int, float, str, None, tuple]: The value of the system variable or None if not found. If return_timestamp is True, returns a tuple of (value, timestamp).
         """
-        return self.application.system.get_variable_value(sys_var_name, return_symbolic_name)
+        variable_value = self.application.system.get_variable_value(sys_var_name, return_symbolic_name)
+        if return_timestamp:
+            return variable_value, datetime.now(timezone.utc).timestamp()
+        return variable_value
 
     def set_system_variable_value(self, sys_var_name: str, value: Union[int, float, str]) -> bool:
         """

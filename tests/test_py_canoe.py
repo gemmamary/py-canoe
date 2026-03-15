@@ -1,5 +1,6 @@
 import os
 from py_canoe import CANoe, wait
+from py_canoe.helpers.common import logger
 
 
 class TestStandalonePyCanoe:
@@ -38,6 +39,29 @@ class TestStandalonePyCanoe:
         assert self.canoe_inst.open(canoe_cfg=self.canoe_cfg_dev, visible=False, auto_save=False, prompt_user=False)
         assert self.canoe_inst.new(auto_save=False, prompt_user=True)
         assert self.canoe_inst.quit()
+
+    def test_opening_different_cfgs_sequentially(self):
+        assert self.canoe_inst.open(canoe_cfg=self.canoe_cfg_dev, visible=True, auto_save=False, prompt_user=False)
+        assert self.canoe_inst.start_measurement()
+        assert self.canoe_inst.stop_measurement()
+        wait(1)
+        assert self.canoe_inst.open(canoe_cfg=self.canoe_cfg_diag, visible=True, auto_save=False, prompt_user=False)
+        assert self.canoe_inst.start_measurement()
+        assert self.canoe_inst.stop_measurement()
+        wait(1)
+        assert self.canoe_inst.open(canoe_cfg=self.canoe_cfg_test_setup, visible=True, auto_save=False, prompt_user=False)
+        assert self.canoe_inst.start_measurement()
+        assert self.canoe_inst.stop_measurement()
+        wait(1)
+
+    def test_attach_to_active_application(self):
+        assert self.canoe_inst.attach_to_active_application()
+        wait(1)
+        assert self.canoe_inst.check_signal_online(bus='CAN', channel=1, message='LightState', signal='FlashLight')
+        self.canoe_inst.check_signal_state(bus='CAN', channel=1, message='LightState', signal='FlashLight')
+        self.canoe_inst.get_signal_value(bus='CAN', channel=1, message='LightState', signal='FlashLight', raw_value=True)
+        wait(1)
+        assert self.canoe_inst.stop_measurement()
 
     def test_meas_start_stop_restart_methods(self):
         assert self.canoe_inst.open(canoe_cfg=self.canoe_cfg_dev, visible=True, auto_save=False, prompt_user=False)
@@ -87,8 +111,8 @@ class TestStandalonePyCanoe:
 
     def test_bus_signal_methods(self):
         self.canoe_inst.open(canoe_cfg=self.canoe_cfg_dev, visible=True, auto_save=False, prompt_user=False)
-        self.canoe_inst.get_bus_databases_info('CAN')
-        self.canoe_inst.get_bus_nodes_info('CAN')
+        self.canoe_inst.get_bus_databases_info('CAN', log_info=True)
+        self.canoe_inst.get_bus_nodes_info('CAN', log_info=True)
         assert self.canoe_inst.start_measurement()
         wait(1)
         self.canoe_inst.get_signal_full_name(bus='CAN', channel=1, message='LightState', signal='FlashLight')
@@ -234,4 +258,15 @@ class TestStandalonePyCanoe:
         assert self.canoe_inst.start_stop_online_logging_block(fr'{self.demo_cfg_dir}\Logs\demo_online_setup_log.blf', start_stop=True)
         wait(1)
         assert self.canoe_inst.start_stop_online_logging_block(fr'{self.demo_cfg_dir}\Logs\demo_online_setup_log.blf', start_stop=False)
+        assert self.canoe_inst.stop_measurement()
+
+    def test_test_unit_methods(self):
+        self.canoe_inst.open(canoe_cfg=r'C:\Users\Public\Documents\Vector\CANoe\Sample Configurations 11.0.81\CAN\Diagnostics\UDSSystem\UDSSystem.cfg')
+        assert self.canoe_inst.start_measurement()
+        test_configurations = self.canoe_inst.application.configuration.get_test_configurations()
+        for tc_name in test_configurations.keys():
+            assert self.canoe_inst.execute_test_configuration(tc_name, wait_for_completion=True)
+        assert self.canoe_inst.application.configuration.execute_all_test_configurations(wait_for_completion=False)
+        wait(5)
+        assert self.canoe_inst.application.configuration.stop_all_test_configurations()
         assert self.canoe_inst.stop_measurement()

@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, Iterable, Union
 if TYPE_CHECKING:
     from py_canoe.core.application import Application
     from py_canoe.core.child_elements.measurement_setup import Logging, ExporterSymbol, Message
+    from py_canoe.core.child_elements.test_configurations import TestConfiguration
 import os
 import win32com.client
 
@@ -13,6 +14,7 @@ from py_canoe.core.child_elements.general_setup import GeneralSetup
 from py_canoe.core.child_elements.measurement_setup import MeasurementSetup
 from py_canoe.core.child_elements.database_setup import Databases
 from py_canoe.core.child_elements.replay_collection import ReplayCollection
+from py_canoe.core.child_elements.test_configurations import TestConfigurations
 from py_canoe.core.child_elements.test_setup import TestSetup
 from py_canoe.helpers.common import logger, wait
 
@@ -38,14 +40,24 @@ class Configuration:
         self.bus_types = self.app.bus_types
         self.com_object = win32com.client.Dispatch(self.app.com_object.Configuration)
         # self.configuration_events: ConfigurationEvents = win32com.client.WithEvents(self.com_object, ConfigurationEvents)
+        self.configuration_test_configurations = lambda: self.test_configurations
         self.configuration_test_setup = lambda: self.test_setup
         self.__test_setup_environments = self.configuration_test_setup().test_environments.fetch_all_test_environments()
+        self.__test_configurations = self.configuration_test_configurations().fetch_all_test_configurations()
         self.__test_modules = list()
+        self.__test_units = list()
 
     def fetch_test_modules(self):
         for te_name, te_inst in self.__test_setup_environments.items():
             for tm_name, tm_inst in te_inst.get_all_test_modules().items():
                 self.__test_modules.append({'name': tm_name, 'object': tm_inst, 'environment': te_name})
+
+    def fetch_test_units(self):
+        for tc_name, tc_inst in self.__test_configurations.items():
+            for tu_index in range(1, tc_inst.test_units.count + 1):
+                tu_inst = tc_inst.test_units.item(tu_index)
+                self.__test_units.append({'name': tu_inst.name, 'object': tu_inst, 'test_configuration': tc_name})
+        return self.__test_units
 
     @property
     def c_libraries(self) -> 'CLibraries':
@@ -82,7 +94,7 @@ class Configuration:
     @property
     def general_setup(self) -> 'GeneralSetup':
         return GeneralSetup(self.com_object.GeneralSetup)
-    
+
     # GlobalTcpIpStackSetting
 
     @property
@@ -104,7 +116,7 @@ class Configuration:
     @property
     def name(self) -> str:
         return self.com_object.Name
-    
+
     # NETTargetFramework
 
     @property
@@ -127,10 +139,6 @@ class Configuration:
     def saved(self) -> bool:
         return self.com_object.Saved
 
-    @property
-    def test_setup(self) -> 'TestSetup':
-        return TestSetup(self.com_object.TestSetup)
-    
     # Sensor
 
     # SimulationSetup
@@ -141,9 +149,13 @@ class Configuration:
 
     # SymbolMappings
 
-    # TestConfigurations
+    @property
+    def test_configurations(self) -> 'TestConfigurations':
+        return TestConfigurations(self.com_object.TestConfigurations)
 
-    # TestSetup
+    @property
+    def test_setup(self) -> 'TestSetup':
+        return TestSetup(self.com_object.TestSetup)
 
     # UserFiles
 
@@ -270,6 +282,69 @@ class Configuration:
                 return False
         except Exception as e:
             logger.error(f"❌ Error enabling/disabling replay block '{block_name}': {e}")
+            return False
+
+    def get_test_configurations(self) -> dict[str, 'TestConfiguration']:
+        try:
+            return self.__test_configurations
+        except Exception as e:
+            logger.error(f'❌ failed to get test configurations. {e}')
+            return {}
+
+    def execute_all_test_configurations(self, wait_for_completion: bool = True) -> bool:
+        try:
+            for tc_name, tc_inst in self.__test_configurations.items():
+                tc_inst.start()
+                if wait_for_completion:
+                    while tc_inst.running:
+                        wait(1)
+                    logger.info(f'🧪🧍 completed executing test configuration ({tc_name}) with verdict 👉 {tc_inst.test_configuration_events.VERDICT.name}')
+                return True
+        except Exception as e:
+            logger.error(f'❌ failed to execute test configuration. {e}')
+            return False
+
+    def stop_all_test_configurations(self,) -> bool:
+        try:
+            for _, tc_inst in self.__test_configurations.items():
+                if tc_inst.running:
+                    tc_inst.stop()
+            return True
+        except Exception as e:
+            logger.error(f'❌ failed to stop test configuration. {e}')
+            return False
+
+    def execute_test_configuration(self, tc_name: str, wait_for_completion: bool = True) -> bool:
+        try:
+            if tc_name in self.__test_configurations.keys():
+                tc_inst = self.__test_configurations[tc_name]
+                tc_inst.start()
+                if wait_for_completion:
+                    while tc_inst.running:
+                        wait(1)
+                    logger.info(f'🧪🧍 completed executing test configuration ({tc_name}) with verdict 👉 {tc_inst.test_configuration_events.VERDICT.name}')
+                return True
+            else:
+                logger.warning(f'⚠️ test configuration "{tc_name}" not found in configuration')
+                return False
+        except Exception as e:
+            logger.error(f'❌ failed to execute test configuration. {e}')
+            return False
+
+    def stop_test_configuration(self, tc_name: str) -> bool:
+        try:
+            if tc_name in self.__test_configurations.keys():
+                tc_inst = self.__test_configurations[tc_name]
+                if tc_inst.running:
+                    tc_inst.stop()
+                else:
+                    logger.warning(f'⚠️ test configuration "{tc_name}" is not running')
+                return True
+            else:
+                logger.warning(f'⚠️ test configuration "{tc_name}" not found in configuration')
+                return False
+        except Exception as e:
+            logger.error(f'❌ failed to stop test configuration. {e}')
             return False
 
     def get_test_environments(self) -> dict:
